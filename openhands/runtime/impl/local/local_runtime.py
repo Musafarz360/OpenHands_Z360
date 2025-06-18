@@ -551,7 +551,8 @@ class LocalRuntime(ActionExecutionClient):
             # Similar to remote runtime...
             parsed_url = urlparse(runtime_url)
             vscode_url = f'{parsed_url.scheme}://vscode-{parsed_url.netloc}'
-        return f'{vscode_url}/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'
+        folder = self.get_vscode_folder()
+        return f'{vscode_url}/?tkn={token}&folder={folder}'
 
     @property
     def web_hosts(self) -> dict[str, int]:

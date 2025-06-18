@@ -272,7 +272,7 @@ echo 'export INPUTRC=/etc/inputrc' >> /etc/bash.bashrc
         tunnel_url = tunnel.url
         self._vscode_url = (
             tunnel_url
-            + f'/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'
+            + f'/?tkn={token}&folder={self.get_vscode_folder()}'
         )
 
         self.log(

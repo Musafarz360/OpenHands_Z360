@@ -25,6 +25,7 @@ from openhands.runtime.impl.docker.containers import stop_all_containers
 from openhands.runtime.plugins import PluginRequirement
 from openhands.runtime.runtime_status import RuntimeStatus
 from openhands.runtime.utils import find_available_tcp_port
+from openhands.runtime.utils.system import check_port_available
 from openhands.runtime.utils.command import (
     DEFAULT_MAIN_MODULE,
     get_action_execution_server_startup_command,
@@ -272,10 +273,15 @@ class DockerRuntime(ActionExecutionClient):
         self._host_port = self._find_available_port(EXECUTION_SERVER_PORT_RANGE)
         self._container_port = self._host_port
         # Use the configured vscode_port if provided, otherwise find an available port
-        self._vscode_port = (
-            self.config.sandbox.vscode_port
-            or self._find_available_port(VSCODE_PORT_RANGE)
-        )
+        configured_port = self.config.sandbox.vscode_port
+        if configured_port and (
+            not check_port_available(configured_port)
+            or self._is_port_in_use_docker(configured_port)
+        ):
+            self.log('warn', f'Configured VSCode port {configured_port} is busy, selecting a free port')
+            configured_port = None
+
+        self._vscode_port = configured_port or self._find_available_port(VSCODE_PORT_RANGE)
         self._app_ports = [
             self._find_available_port(APP_PORT_RANGE_1),
             self._find_available_port(APP_PORT_RANGE_2),
@@ -481,7 +487,8 @@ class DockerRuntime(ActionExecutionClient):
         if not token:
             return None
 
-        vscode_url = f'http://localhost:{self._vscode_port}/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'
+        folder = self.get_vscode_folder()
+        vscode_url = f'http://localhost:{self._vscode_port}/?tkn={token}&folder={folder}'
         return vscode_url
 
     @property

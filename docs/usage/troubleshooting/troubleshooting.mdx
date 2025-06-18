@@ -69,3 +69,62 @@ To fix this:
    [sandbox]
    vscode_port = 41234
    ```
+### VS Code tab shows cross-origin cookie error
+
+**Description**
+
+When the main app is served over HTTPS but VS Code runs on an HTTP port, the UI displays:
+
+```
+The code editor cannot be embedded due to browser security restrictions. Cross-origin cookies are being blocked.
+```
+
+**Resolution**
+
+Serve the VS Code server from the same host and protocol as the app:
+
+1. Set a fixed port for VS Code using `SANDBOX_VSCODE_PORT` and expose it.
+2. Proxy that port via your web server so `/vscode/` is available under the same domain. Example Nginx block:
+   ```nginx
+   location /vscode/ {
+       proxy_pass http://localhost:41234/;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+   }
+   ```
+3. Add `vscode_port = 41234` under `[sandbox]` in `config.toml` to match the proxied port.
+4. If the configured port is already in use, OpenHands chooses a random
+   available port and prints a warning. Update your proxy if you see this.
+
+### Connected repository not shown in VS Code
+
+**Description**
+
+The VS Code tab opens but the cloned repository does not appear in the file explorer.
+
+**Resolution**
+
+1. Verify that the VS Code CLI is available by running `which code` inside the container. If the command is missing, install the CLI tools for your distribution.
+2. Make sure your workspace is mounted to `/workspace` in the container. The easiest way is to set `SANDBOX_VOLUMES=/path/to/projects:/workspace:rw` when starting the container. This ensures the cloned repository is visible to VS Code.
+3. Check that the repository directory is mounted in the container using `docker inspect <container>` and reviewing the `Mounts` section. The path returned by `get_vscode_folder()` in `openhands/runtime/base.py` must be accessible inside the container.
+4. After confirming the mount, reload the editor. The repository folder should now be listed.
+
+### Old projects appear in new conversations
+
+**Description**
+
+Starting a new conversation sometimes shows files from a previous session.
+
+**Resolution**
+
+OpenHands removes old files before cloning the selected repository. If you mount
+`/workspace` from the host, ensure the directory is writable by the container
+user so the runtime can clean it. After launching a new conversation the runtime
+logs a warning if any files could not be deleted. The workspace is cleared on
+startup except for `.vscode`, so each new conversation begins with an empty
+folder until a repository is cloned or initialized.

@@ -1,0 +1,85 @@
+---
+title: Deploying on a Remote Server
+description: How to configure OpenHands when serving the web UI and VS Code on the same domain.
+---
+
+When running OpenHands on a remote machine you may want the web UI and the embedded VS Code editor to share the same domain. This avoids cross‑origin cookie issues and lets the editor work inside the browser.
+
+## 1. Pick a fixed VS Code port
+
+Choose a port such as `41234` and set it when starting the container:
+
+```bash
+docker run -it --rm \
+  -e SANDBOX_VSCODE_PORT=41234 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v ~/.openhands-state:/.openhands-state \
+  -p 3000:3000 \
+  -p 41234:41234 \
+  --add-host host.docker.internal:host-gateway \
+  --name openhands-app \
+  docker.all-hands.dev/all-hands-ai/openhands:latest
+```
+
+## 2. Update `config.toml`
+
+Create a `config.toml` (or copy `config.template.toml`) and add:
+
+```toml
+[sandbox]
+vscode_port = 41234
+```
+
+This ensures the runtime uses the same port each time.
+
+If that port is already in use on the host, OpenHands will automatically fall back
+to a random available port and log a warning. Update your reverse proxy
+configuration accordingly if this happens.
+
+## 3. Proxy `/vscode/` through your web server
+
+If you use Nginx, add a block to proxy the VS Code port so both the app and editor share the same origin:
+
+```nginx
+location /vscode/ {
+    proxy_pass http://localhost:41234/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+After reloading Nginx, visit `https://your-domain.example.com/vscode/` directly to verify the editor loads. The UI will then embed the editor without triggering the cross‑origin cookie warning.
+
+## 4. Using docker-compose
+
+If you prefer to manage OpenHands with `docker-compose`, expose the same VS Code
+port and mount your workspace directory. A minimal example:
+
+```yaml
+version: '3.8'
+
+services:
+  openhands:
+    build:
+      context: ./
+      dockerfile: ./containers/app/Dockerfile
+    image: openhands:latest
+    environment:
+      - SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.42-nikolaik
+      - SANDBOX_VSCODE_PORT=41234
+    ports:
+      - "3000:3000"
+      - "41234:41234"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.openhands-state:/.openhands-state
+      - ./workspace:/workspace:rw
+```
+
+With this compose file the editor will be reachable under `/vscode/` on the same
+domain, so it can be embedded without cross‑origin warnings.

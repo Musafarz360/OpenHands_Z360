@@ -379,7 +379,8 @@ class RemoteRuntime(ActionExecutionClient):
         assert isinstance(_parsed_url.scheme, str) and isinstance(
             _parsed_url.netloc, str
         )
-        vscode_url = f'{_parsed_url.scheme}://vscode-{_parsed_url.netloc}/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'
+        folder = self.get_vscode_folder()
+        vscode_url = f'{_parsed_url.scheme}://vscode-{_parsed_url.netloc}/?tkn={token}&folder={folder}'
         self.log(
             'debug',
             f'VSCode URL: {vscode_url}',

@@ -180,6 +180,7 @@ class Runtime(FileEditRuntimeMixin):
         self.user_id = user_id
         self.git_provider_tokens = git_provider_tokens
         self.runtime_status = None
+        self.repo_directory: str | None = None
 
     @property
     def runtime_initialized(self) -> bool:
@@ -207,6 +208,29 @@ class Runtime(FileEditRuntimeMixin):
     def log(self, level: str, message: str) -> None:
         message = f'[runtime {self.sid}] {message}'
         getattr(logger, level)(message, stacklevel=2)
+   
+    def clear_workspace(self) -> None:
+        """Remove all files in the workspace so new conversations start clean."""
+        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        for item in self.workspace_root.iterdir():
+            if item.name == '.vscode':
+                continue
+            try:
+                if item.is_dir() and not item.is_symlink():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+            except Exception as e:  # pragma: no cover - log and continue
+                self.log('warning', f'Failed to remove {item}: {e}')
+
+        # Verify directory is empty (aside from `.vscode`) and log a warning if not
+        remaining = [p.name for p in self.workspace_root.iterdir() if p.name != '.vscode']
+        if remaining:
+            self.log('warning', f'Workspace not fully cleared: {remaining}')
+
+        # Reset repo_directory so VS Code opens an empty workspace until a new
+        # repository is cloned or initialized
+        self.repo_directory = None
 
     def set_runtime_status(self, runtime_status: RuntimeStatus):
         """Sends a status message if the callback function was provided."""
@@ -372,6 +396,7 @@ class Runtime(FileEditRuntimeMixin):
         selected_repository: str | None,
         selected_branch: str | None,
     ) -> str:
+        self.clear_workspace()
         repository = None
         if selected_repository:  # Determine provider from repo name
             try:
@@ -397,10 +422,12 @@ class Runtime(FileEditRuntimeMixin):
                     command=f'git init && git config --global --add safe.directory {self.workspace_root}'
                 )
                 self.run_action(action)
+                self.repo_directory = str(self.workspace_root)
             else:
                 logger.info(
                     'In workspace mount mode, not initializing a new git repository.'
                 )
+            self.repo_directory = str(self.workspace_root)
             return ''
 
         # This satisfies mypy because param is optional, but `verify_repo_provider` guarentees this gets populated
@@ -467,6 +494,7 @@ class Runtime(FileEditRuntimeMixin):
         action = cd_checkout_action
         self.log('info', f'Cloning repo: {selected_repository}')
         self.run_action(action)
+        self.repo_directory = str(self.workspace_root / dir_name)
         return dir_name
 
     def maybe_run_setup_script(self):
@@ -494,6 +522,10 @@ class Runtime(FileEditRuntimeMixin):
     def workspace_root(self) -> Path:
         """Return the workspace root path."""
         return Path(self.config.workspace_mount_path_in_sandbox)
+
+    def get_vscode_folder(self) -> str:
+        """Return the folder path VS Code should open."""
+        return self.repo_directory or self.config.workspace_mount_path_in_sandbox
 
     def maybe_setup_git_hooks(self):
         """Set up git hooks if .openhands/pre-commit.sh exists in the workspace or repository."""

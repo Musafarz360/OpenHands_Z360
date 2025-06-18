@@ -182,7 +182,7 @@ class RunloopRuntime(ActionExecutionClient):
                 id=self.devbox.id,
                 port=self._vscode_port,
             ).url
-            + f'/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'
+            + f'/?tkn={token}&folder={self.get_vscode_folder()}'
         )
 
         self.log(

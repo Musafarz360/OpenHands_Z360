@@ -1,3 +1,4 @@
+# Stage 1: Frontend Build
 ARG OPENHANDS_BUILD_VERSION=dev
 FROM node:22.16.0-bookworm-slim AS frontend-builder
 
@@ -9,6 +10,7 @@ RUN npm ci
 COPY frontend ./
 RUN npm run build
 
+# Stage 2: Backend Build
 FROM python:3.12.10-slim AS base
 FROM base AS backend-builder
 
@@ -28,15 +30,15 @@ COPY pyproject.toml poetry.lock ./
 RUN touch README.md
 RUN export POETRY_CACHE_DIR && poetry install --no-root && rm -rf $POETRY_CACHE_DIR
 
+# Stage 3: Final App Image
 FROM base AS openhands-app
 
 WORKDIR /app
 
-# re-declare for this section
 ARG OPENHANDS_BUILD_VERSION
 
+# Environment configuration
 ENV RUN_AS_OPENHANDS=true
-# A random number--we need this to be different from the user's UID on the host machine
 ENV OPENHANDS_USER_ID=42420
 ENV SANDBOX_LOCAL_RUNTIME_URL=http://host.docker.internal
 ENV USE_HOST_NETWORK=false
@@ -45,50 +47,60 @@ ENV OPENHANDS_BUILD_VERSION=$OPENHANDS_BUILD_VERSION
 ENV SANDBOX_USER_ID=0
 ENV FILE_STORE=local
 ENV FILE_STORE_PATH=/.openhands-state
-RUN mkdir -p $FILE_STORE_PATH
-RUN mkdir -p $WORKSPACE_BASE
+ENV ENABLE_VSCODE=true
+ENV ENABLE_VSCODE_PASSWORD=false
 
+RUN mkdir -p $FILE_STORE_PATH $WORKSPACE_BASE
+
+# Install system utilities & code-server
 RUN apt-get update -y \
-    && apt-get install -y curl ssh sudo \
+    && apt-get install -y curl sudo ssh gnupg git build-essential \
+    && curl -fsSL https://code-server.dev/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
-# Default is 1000, but OSX is often 501
-RUN sed -i 's/^UID_MIN.*/UID_MIN 499/' /etc/login.defs
-# Default is 60000, but we've seen up to 200000
-RUN sed -i 's/^UID_MAX.*/UID_MAX 1000000/' /etc/login.defs
+# Adjust UID range for macOS host compatibility
+RUN sed -i 's/^UID_MIN.*/UID_MIN 499/' /etc/login.defs \
+ && sed -i 's/^UID_MAX.*/UID_MAX 1000000/' /etc/login.defs
 
-RUN groupadd app
-RUN useradd -l -m -u $OPENHANDS_USER_ID -s /bin/bash openhands && \
-    usermod -aG app openhands && \
-    usermod -aG sudo openhands && \
-    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-RUN chown -R openhands:app /app && chmod -R 770 /app
-RUN sudo chown -R openhands:app $WORKSPACE_BASE && sudo chmod -R 770 $WORKSPACE_BASE
+# Add openhands user and permissions
+RUN groupadd app \
+ && useradd -l -m -u $OPENHANDS_USER_ID -s /bin/bash openhands \
+ && usermod -aG app openhands \
+ && usermod -aG sudo openhands \
+ && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers \
+ && chown -R openhands:app /app && chmod -R 770 /app \
+ && chown -R openhands:app $WORKSPACE_BASE && chmod -R 770 $WORKSPACE_BASE
+
 USER openhands
 
+# Environment settings for Python and Poetry
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH='/app'
 
+# Backend environment
 COPY --chown=openhands:app --chmod=770 --from=backend-builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
+# Copy project code and permissions
 COPY --chown=openhands:app --chmod=770 ./microagents ./microagents
 COPY --chown=openhands:app --chmod=770 ./openhands ./openhands
 COPY --chown=openhands:app --chmod=777 ./openhands/runtime/plugins ./openhands/runtime/plugins
 COPY --chown=openhands:app pyproject.toml poetry.lock README.md MANIFEST.in LICENSE ./
 
-# This is run as "openhands" user, and will create __pycache__ with openhands:openhands ownership
-RUN python openhands/core/download.py # No-op to download assets
-# Add this line to set group ownership of all files/directories not already in "app" group
-# openhands:openhands -> openhands:app
+# Pre-download models/assets (as openhands user)
+RUN python openhands/core/download.py
+
+# Correct group permissions
 RUN find /app \! -group app -exec chgrp app {} +
 
+# Copy frontend and entrypoint
 COPY --chown=openhands:app --chmod=770 --from=frontend-builder /app/build ./frontend/build
 COPY --chown=openhands:app --chmod=770 ./containers/app/entrypoint.sh /app/entrypoint.sh
 
+# Switch back to root to run entrypoint
 USER root
-
 WORKDIR /app
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "openhands.server.listen:app", "--host", "0.0.0.0", "--port", "3000"]
+

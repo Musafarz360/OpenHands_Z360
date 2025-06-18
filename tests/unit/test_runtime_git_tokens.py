@@ -239,7 +239,7 @@ async def test_clone_or_init_repo_no_repo_with_user_id(temp_dir):
         == f'git init && git config --global --add safe.directory {runtime.workspace_root}'
     )
     assert result == ''
-
+    assert runtime.repo_directory == str(runtime.workspace_root)
 
 @pytest.mark.asyncio
 async def test_clone_or_init_repo_no_repo_no_user_id_no_workspace_base(temp_dir):
@@ -263,7 +263,7 @@ async def test_clone_or_init_repo_no_repo_no_user_id_no_workspace_base(temp_dir)
         == f'git init && git config --global --add safe.directory {runtime.workspace_root}'
     )
     assert result == ''
-
+    assert runtime.repo_directory == str(runtime.workspace_root)
 
 @pytest.mark.asyncio
 async def test_clone_or_init_repo_no_repo_no_user_id_with_workspace_base(temp_dir):
@@ -282,7 +282,7 @@ async def test_clone_or_init_repo_no_repo_no_user_id_with_workspace_base(temp_di
     # Verify that git init was not called
     assert len(runtime.run_action_calls) == 0
     assert result == ''
-
+    assert runtime.repo_directory == str(runtime.workspace_root)
 
 @pytest.mark.asyncio
 async def test_clone_or_init_repo_auth_error(temp_dir):
@@ -350,8 +350,8 @@ async def test_clone_or_init_repo_github_with_token(temp_dir, monkeypatch):
     assert 'git checkout -b openhands-workspace-' in checkout_cmd
 
     assert result == 'repo'
-
-
+    assert runtime.repo_directory == str(runtime.workspace_root / 'repo')
+ 
 @pytest.mark.asyncio
 async def test_clone_or_init_repo_github_no_token(temp_dir, monkeypatch):
     """Test cloning a GitHub repository without a token"""
@@ -455,3 +455,5 @@ async def test_clone_or_init_repo_with_branch(temp_dir, monkeypatch):
     assert 'git checkout feature-branch' in checkout_cmd
     assert 'git checkout -b' not in checkout_cmd  # Should not create a new branch
     assert result == 'repo'
+    assert runtime.repo_directory == str(runtime.workspace_root / 'repo')
+

@@ -96,6 +96,34 @@ run OpenHands in a scriptable [headless mode](https://docs.all-hands.dev/usage/h
 interact with it via a [friendly CLI](https://docs.all-hands.dev/usage/how-to/cli-mode),
 or run it on tagged issues with [a github action](https://docs.all-hands.dev/usage/how-to/github-action).
 
+## 🌐 Running on a Remote Server
+
+OpenHands can serve its web UI and the embedded VS Code editor from the same domain. When deploying behind a reverse proxy:
+
+1. Pick a fixed port for VS Code (e.g. `41234`) and set `SANDBOX_VSCODE_PORT=41234` when starting the container.
+2. Expose the same port with `-p 41234:41234`.
+3. Add `vscode_port = 41234` under `[sandbox]` in your `config.toml`.
+4. Proxy `/vscode/` to `http://localhost:41234/` in your web server configuration. See the [Troubleshooting Guide](https://docs.all-hands.dev/usage/troubleshooting) for an example Nginx block.
+   A minimal Nginx location block looks like:
+
+   ```nginx
+   location /vscode/ {
+       proxy_pass http://localhost:41234/;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+   }
+   ```
+5. Mount your project directory with `-e SANDBOX_VOLUMES=/path/to/projects:/workspace:rw` so the editor can access your code.
+
+This configuration avoids cross-origin cookie errors so the editor loads correctly under `/vscode/`.
+
+See [Deploying on a Remote Server](./docs/usage/how-to/remote-server.mdx) for a full example.
+
 Visit [Running OpenHands](https://docs.all-hands.dev/usage/installation) for more information and setup instructions.
 
 If you want to modify the OpenHands source code, check out [Development.md](https://github.com/All-Hands-AI/OpenHands/blob/main/Development.md).
