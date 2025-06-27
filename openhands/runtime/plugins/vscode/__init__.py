@@ -1,8 +1,4 @@
-import asyncio
-import os
-import shutil
-import sys
-import uuid
+import asyncio, os, shutil, sys, uuid, tempfile, pathlib, subprocess, glob
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -62,11 +58,26 @@ class VSCodePlugin(Plugin):
                 f'Port {self.vscode_port} is not available. VSCode plugin will be disabled.'
             )
             return
+        # 1️⃣  fresh VS Code cache per session
+        user_data_dir = pathlib.Path(tempfile.gettempdir()) / f"ovsc-{uuid.uuid4().hex[:8]}"
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2️⃣  pick the active repo (first visible dir) or default to /workspace
+        candidates = [p for p in pathlib.Path("/workspace").iterdir()
+                      if p.is_dir() and not p.name.startswith('.')]
+        repo_dir = candidates[0] if candidates else pathlib.Path("/workspace")
+
         cmd = (
             f"su - {username} -s /bin/bash << 'EOF'\n"
-            f'sudo chown -R {username}:{username} /openhands/.openvscode-server\n'
-            'cd /workspace\n'
-            f'exec /openhands/.openvscode-server/bin/openvscode-server --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust\n'
+            f'sudo chown -R {username}:{username} /openhands/.openvscode-server {user_data_dir}\n'
+            f'cd {repo_dir}\n'
+            f'exec /openhands/.openvscode-server/bin/openvscode-server '
+            f'--host 0.0.0.0 '
+            f'--connection-token {self.vscode_connection_token} '
+            f'--port {self.vscode_port} '
+            f'--user-data-dir {user_data_dir} '
+            f'--folder {repo_dir} '
+            f'--disable-workspace-trust\n'
             'EOF'
         )
 
@@ -94,9 +105,10 @@ class VSCodePlugin(Plugin):
         )
 
     def _setup_vscode_settings(self) -> None:
-        """
-        Set up VSCode settings by creating the .vscode directory in the workspace
-        and copying the settings.json file there.
+        """Set up VSCode settings.
+
+        Create the ``.vscode`` directory in the workspace and copy
+        the ``settings.json`` file there.
         """
         # Get the path to the settings.json file in the plugin directory
         current_dir = Path(__file__).parent
