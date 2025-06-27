@@ -59,23 +59,34 @@ class VSCodePlugin(Plugin):
             )
             return
         # 1️⃣  fresh VS Code cache per session
-        user_data_dir = pathlib.Path(tempfile.gettempdir()) / f"ovsc-{uuid.uuid4().hex[:8]}"
+        user_data_dir = (
+            pathlib.Path(tempfile.gettempdir()) / f"ovsc-{uuid.uuid4().hex[:8]}"
+        )
+        extensions_dir = (
+            pathlib.Path(tempfile.gettempdir()) / f"ovsc-ext-{uuid.uuid4().hex[:8]}"
+        )
+
         user_data_dir.mkdir(parents=True, exist_ok=True)
+        extensions_dir.mkdir(parents=True, exist_ok=True)
 
         # 2️⃣  pick the active repo (first visible dir) or default to /workspace
-        candidates = [p for p in pathlib.Path("/workspace").iterdir()
-                      if p.is_dir() and not p.name.startswith('.')]
+        candidates = [
+            p
+            for p in pathlib.Path("/workspace").iterdir()
+            if p.is_dir() and not p.name.startswith('.')
+        ]
         repo_dir = candidates[0] if candidates else pathlib.Path("/workspace")
 
         cmd = (
             f"su - {username} -s /bin/bash << 'EOF'\n"
-            f'sudo chown -R {username}:{username} /openhands/.openvscode-server {user_data_dir}\n'
+            f'sudo chown -R {username}:{username} /openhands/.openvscode-server {user_data_dir} {extensions_dir}\n'
             f'cd {repo_dir}\n'
             f'exec /openhands/.openvscode-server/bin/openvscode-server '
             f'--host 0.0.0.0 '
             f'--connection-token {self.vscode_connection_token} '
             f'--port {self.vscode_port} '
             f'--user-data-dir {user_data_dir} '
+            f'--extensions-dir {extensions_dir} '
             f'--folder {repo_dir} '
             f'--disable-workspace-trust\n'
             'EOF'
